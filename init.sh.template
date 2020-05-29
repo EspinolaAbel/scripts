@@ -1,0 +1,161 @@
+#!/bin/bash
+
+# ESTAS VARIABLES TIENEN QUE ESTAR DEFINIDAS EN EL sh QUE ESTA IMPORTANDO ESTE SCRIPT
+validarVariablesRequeridas() {
+	local -a variables_requeridas=( DIRECTORIO_TICKET DIRECTORIO_DE_TRABAJO BRANCH_DE_TRABAJO );	
+	local -a variables_no_definidas;
+
+	for i in ${variables_requeridas[*]};
+	do {
+		if [[ -z ${!i} ]];
+		then {
+			variables_no_definidas+=( "$i" );
+		};
+		fi;
+	};
+	done;
+
+	if (( ${#variables_no_definidas[*]} != 0 ));
+	then {
+		echo "No están definidas la variables ${variables_no_definidas[*]}. Este bash se va a cerrar";
+		read;
+		exit;
+	};
+	fi;
+}
+
+validarVariablesRequeridas;
+unset validarVariablesRequeridas;
+
+LOG_FILE="$DIRECTORIO_TICKET/init.sh.log";
+VSTUDIO_IDE="${ROOT_PATH}# path al ide de visual studio
+ECLIPSE_IDE="${ROOT_PATH}# path al ide de eclipse
+VSCODE_IDE="${ROOT_PATH}# path al ide de visual studio code
+
+if [[ -z $LOG_ON ]];
+then 
+	LOG_ON=1;
+fi;
+
+logToFile() { if (( $LOG_ON == 1 )); then echo "`date \"+%Y-%m-%d %H:%M:%S\"` $1" >> "$LOG_FILE" ; fi; };
+
+echoInfo() {
+	echo -e "\033[1;32;40m$1\033[m";
+}
+
+echoError() {
+	echo -e "\033[1;31;40m$1\033[m";
+}
+
+helpInit() {
+	sed -nE -e '/^\w+\(/ s/(^\w*)\(.*$/\1/ p;' "$DIRECTORIO_TICKET/init.sh" | sort;
+	sed -nE -e '/^\w+\(/ s/(^\w*)\(.*$/\1/ p;' "${ROOT_PATH}# path de init.sh.template" | sort;
+}
+
+notas() {
+	local path="$DIRECTORIO_TICKET/NOTAS.txt"; 
+	local titulo="$1";
+	if [[ ! -f "$path" ]];
+	then {
+		local header="** $titulo *******************************************************************************************************************************************";
+		echo -e "$header" | sed -e 's|.|*|g' >> "$path";
+		echo -e "$header" | sed -e 's|^.*$|\U\0|' >> "$path";
+		echo -e "$header" | sed -e 's|.|*|g' >> "$path";
+		echo -e "Dir:\n$DIRECTORIO_DE_TRABAJO" | sed -e 's|/|\\|g' >> "$path";
+		echo -e "Branch:\n$BRANCH_DE_TRABAJO" | sed -e 's|/|\\|g' >> "$path";
+	};
+	fi;
+	vim -c ":loadview" "$path";
+}
+
+cdWorkdir() {
+	cd "$DIRECTORIO_DE_TRABAJO";
+	if (( $? != 0 )); 
+	then {
+		logToFile "error navegando a dir $DIRECTORIO_DE_TRABAJO";
+		return;
+	};
+	fi;
+}
+
+cdTicketdir() {
+	cd "$DIRECTORIO_TICKET";
+	if (( $? != 0 )); 
+	then {
+		logToFile "Error navegando a dir $DIRECTORIO_TICKET";
+		return;
+	};
+	fi;
+}
+
+gitCheckoutBranch() {
+	if [[ "$PWD" != "$DIRECTORIO_DE_TRABAJO" ]]; then cdWorkdir; fi;
+
+	if [[ "$BRANCH_DE_TRABAJO" != "`git branch | sed -ne '/\*/ s/^* // p'`" ]];
+	then {
+		logToFile "Cambiando branch..."
+
+		git checkout "$BRANCH_DE_TRABAJO";
+		if (( $? != 0 )); then {
+			logToFile "Error checkout branch $BRANCH_DE_TRABAJO";
+			return;
+		};
+		fi;
+
+		logToFile "Se cambió a branch $BRANCH_DE_TRABAJO";
+	};
+	else {
+		logToFile "El branch actual es $BRANCH_DE_TRABAJO";
+	}
+	fi;
+}
+
+ideEclipseAbrir() {
+	logToFile "abriendo Eclipse IDE";
+	local path="`echo "$ECLIPSE_IDE" | sed 's/\//\\\/g' `";
+	#logToFile "$path";
+
+	cmd //c start //D "`dirname $path`" "`basename $path`";
+	if (( $? == 0 ));
+	then {
+		#local pid=$!;
+		echo "Ejecutando Eclipse"; #: $pid";
+		#disown $pid;
+	};
+	fi;
+}
+
+ideVisualstudiocodeAbrir() {
+	logToFile "abriendo Visual Studio Code";
+	local path="`echo "$VSCODE_IDE" | sed 's/\//\\\/g' `";
+	cmd //c start //D "`dirname \"$path\"`" "`basename \"$path\"`";
+	if (( $? == 0 ));
+	then {
+		echo "Ejecutando Visual Studio Code";
+	};
+	fi;
+}
+
+ideVisualstudioAbrir() {
+	logToFile "abriendo VisualStudio IDE";
+	local path="`echo "$VSTUDIO_IDE" | sed 's/\//\\\/g' `";
+	local app="`basename \"$path\"`";
+	local dir="`dirname \"$path\"`";
+	local solution="`ls -1 \"$DIRECTORIO_DE_TRABAJO\"/*.sln | head -n 1`";
+	if (( ${#solution} != 0 )); 
+	then {
+		cmd //c start //D "$dir" ".\\$app" "$solution";
+	};
+	else {
+		cmd //c start //D "$dir" ".\\$app";
+	};
+	fi;
+
+	if (( $? == 0 ));
+	then {
+		#local pid=$!;
+		echo "Ejecutando Visual Studio"; #: $pid";
+		#disown $pid;
+	};
+	fi;
+}
