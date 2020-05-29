@@ -1,0 +1,97 @@
+#!/bin/bash
+#version 1
+
+actualizarVersionEnArchivo() {
+	local archivoVersion=$1;
+
+	local viejaVersion=`sed -n -E -e '/\[assembly: AssemblyVersion\("[0-9.]+"\)\]/ s/^.*AssemblyVersion\("([^"]+)"\).*$/\1/ p' "$archivoVersion"`;
+	local nuevaVersion="";
+	echo "${archivoVersion/$DIRECTORIO_DE_TRABAJO/}";
+	read -i "$viejaVersion" -e -p 'Version: ' nuevaVersion;
+
+	if [[ $viejaVersion == $nuevaVersion ]]; then return; fi;
+
+	#echo "La nueva version es $nuevaVersion";
+	#=`sed -n -E -e '/\[assembly: AssemblyVersion\( "[0-9.]+ "\)\]/ s/^.*AssemblyVersion\("([^"]+)"\).*$/\1/ p' "$archivoVersion"`;
+	sed -i -n -E -e "/\[assembly: AssemblyVersion\(\"[0-9.]+\"\)\]/ s/^(.*AssemblyVersion\(\")[^\"]+(\"\).*)$/\1$nuevaVersion\2/; p" "$archivoVersion";
+	sed -i -n -E -e "/\[assembly: AssemblyFileVersion\(\"[0-9.]+\"\)\]/ s/^(.*AssemblyFileVersion\(\")[^\"]+(\"\).*)$/\1$nuevaVersion\2/; p" "$archivoVersion";
+}
+
+archivosVersion() {
+	find "$DIRECTORIO_DE_TRABAJO" -regextype posix-extended -regex '.*AssemblyInfo\.cs$'
+}
+
+versionActual() {
+	for i in `find "$DIRECTORIO_DE_TRABAJO" -name '*.csproj'`;
+	do {
+		local assemblyName=`sed -n -E -e '/<AssemblyName>.*<\/AssemblyName>/ s/^.*<AssemblyName>(.+)<\/AssemblyName>.*$/\1/ p' "$i"`;
+		local propertyFile="`dirname $i`/Properties/AssemblyInfo.cs";
+		#echo $propertyFile;
+		sed -n -E "/\[assembly: AssemblyVersion\(\"[0-9.]+\"\)\]/ s/^.*\"([0-9.]+)\".*$/${assemblyName}-\1/ p" "$propertyFile";
+	}; 
+	done;
+}
+
+gitCommitAndPush() {
+	cdWorkdir;
+
+	echoInfo "\nActualizar version: ";
+	for i in `archivosVersion`;
+	do {
+		actualizarVersionEnArchivo "$i";
+	}; 
+	done;
+
+	git add `archivosVersion`;
+	
+	git status;
+
+	local proceedWithCommit;
+	while [[ $proceedWithCommit != 'y' && $proceedWithCommit != 'si' ]];
+	do {
+		echoInfo "\n¿Commitear a $BRANCH_DE_TRABAJO? (si y|no n)";
+		read -e proceedWithCommit;
+		if [[ $proceedWithCommit == 'n' || $proceedWithCommit == 'no' ]];
+		then {
+			echoInfo "Se cancela el commit...";
+			return 1;
+		};
+		fi;
+	};
+	done;
+
+	#CUSTOM_COMMIT_MESSAGE es una variable que va a ser agarrada por el archivo ./.git/hooks/prepare-commit-msg, si está definido
+	CUSTOM_COMMIT_MESSAGE="`versionActual`" git commit 
+
+	if (( $? != 0 )); 
+	then {
+		echoError "\nFallo el comando commit";
+		return;
+	};
+	fi;
+
+	git status;
+
+	local proceedWithPush;
+	while [[ $proceedWithPush != 'y' && $proceedWithPush != 'si' ]];
+	do {
+		echoInfo "\n¿Pushear a branch $BRANCH_DE_TRABAJO? (si y|no n)";
+		read -e proceedWithPush;
+		if [[ $proceedWithPush == 'n' || $proceedWithPush == 'no' ]];
+		then {
+			echoInfo "Se cancela el push...";
+			return 1;
+		};
+		fi;
+	};
+	done;
+
+	git push;
+	
+	if (( $? != 0 )); 
+	then {
+		echoError "\nFallo el comando push";
+		return;
+	};
+	fi;
+}
